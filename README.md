@@ -21,7 +21,7 @@ wired together and reproducible from a single `docker compose up`.
 Built incrementally. Each milestone has an acceptance test that must pass
 before the next begins.
 
-- [ ] Milestone 1 — Repo skeleton, Git, CI
+- [x] Milestone 1 — Repo skeleton, Git, CI
 - [ ] Milestone 2 — Docker Compose stack: Postgres + MinIO + MLflow
 - [ ] Milestone 3 — Synthetic data generator
 - [ ] Milestone 4 — Spark feature pipeline
