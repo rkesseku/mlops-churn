@@ -1,0 +1,76 @@
+[project]
+name = "churn-platform"
+version = "0.1.0"
+description = "End-to-end MLOps platform for customer churn prediction"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Reagan Kesseku", email = "reagankesseku@gmail.com" },
+]
+license = { text = "MIT" }
+keywords = ["mlops", "churn", "xgboost", "mlflow", "spark", "monitoring"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+]
+
+# Runtime dependencies — the libraries the application needs to RUN.
+# Pinned to known-good versions to keep the build reproducible.
+# Spark / FastAPI / Prometheus / Grafana run in their own containers; their
+# Python deps are pinned in their respective Dockerfiles, not here.
+dependencies = [
+  "numpy==2.1.3",
+  "pandas==2.2.3",
+  "pyarrow==18.0.0",
+  "pydantic==2.9.2",
+  "pydantic-settings==2.6.1",
+  "python-dotenv==1.0.1",
+]
+
+[project.optional-dependencies]
+# Developer / CI tooling — testing and linting.
+# Installed with `pip install -e ".[dev]"`.
+dev = [
+  "pytest==8.3.3",
+  "pytest-cov==6.0.0",
+  "ruff==0.7.4",
+  "ipython==8.29.0",
+]
+
+[project.urls]
+Repository = "https://github.com/rkesseku/mlops-churn"
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# Tell setuptools the package lives in src/ — standard "src layout" pattern.
+# Why src layout: prevents accidentally importing the in-tree code; you only
+# ever import the *installed* version, which catches "I forgot to add this to
+# the package" errors before they bite you in production.
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["churn_platform*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# Conservative ruleset — good defaults without being annoying.
+# E,W = pycodestyle, F = pyflakes (catches real bugs), I = import sorting,
+# UP = pyupgrade (modern syntax), B = bug-prone patterns, SIM = simplify,
+# RUF = ruff's own rules.
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]  # ruff format handles line length
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+addopts = "-ra --strict-markers --tb=short"
