@@ -23,7 +23,7 @@ before the next begins.
 
 - [x] Milestone 1 — Repo skeleton, Git, CI
 - [x] Milestone 2 — Docker Compose stack: Postgres + MinIO + MLflow
-- [ ] Milestone 3 — Synthetic data generator
+- [x] Milestone 3 — Synthetic data generator
 - [ ] Milestone 4 — Spark feature pipeline
 - [ ] Milestone 5 — Training with Optuna + MLflow tracking
 - [ ] Milestone 6 — FastAPI serving from MLflow registry
