@@ -37,6 +37,7 @@ dependencies = [
   # Postgres + S3 clients for MLflow tracking and registry.
   "psycopg2-binary==2.9.10",
   "boto3==1.35.60",
+  "scipy==1.14.1",
   # Serving stack
   "fastapi==0.115.5",
   "uvicorn[standard]==0.32.1",

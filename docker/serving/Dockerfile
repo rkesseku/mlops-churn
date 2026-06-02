@@ -20,6 +20,7 @@ RUN pip install --no-cache-dir \
         scikit-learn==1.5.2 \
         xgboost==2.1.2 \
         mlflow-skinny==2.17.2 \
+        scipy==1.14.1 \
         boto3==1.35.60 \
         fastapi==0.115.5 \
         "uvicorn[standard]==0.32.1" \

@@ -68,6 +68,27 @@ data-drifted:  ## Generate 100K-row covariate-drifted scoring data for the drift
 data-sample:  ## Generate a tiny 1K-row sample for tests, commit-safe
 	$(MAKE) data ROWS=1000 OUT=data/samples/customers_sample.parquet
 
+# ---------- Monitoring & drift ----------
+
+.PHONY: demo-drift
+demo-drift:  ## Generate drifted data, score against baseline, print verdict
+	@echo
+	@echo "=== Step 1/3: generating drifted dataset (50k rows, severe covariate drift) ==="
+	$(MAKE) data ROWS=50000 DRIFT=covariate DRIFT_STR=1.0 \
+	       OUT=data/raw/customers_drifted.parquet
+	@echo
+	@echo "=== Step 2/3: scoring against baseline ==="
+	@curl -s -X POST http://localhost:8000/drift/score \
+	       -H "Content-Type: application/json" \
+	       -d '{"baseline_path":"/opt/jobs/data/raw/customers.parquet","current_path":"/opt/jobs/data/raw/customers_drifted.parquet"}' \
+	       | python3 -m json.tool
+	@echo
+	@echo "=== Step 3/3: if should_retrain=true, run 'make train' to refit ==="
+
+.PHONY: retrain
+retrain:  ## Alias for make train; clarifies intent in the drift-response workflow
+	$(MAKE) train
+
 # ---------- Serving ----------
 
 .PHONY: serve

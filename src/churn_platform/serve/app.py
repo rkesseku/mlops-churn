@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse
 from prometheus_client import Counter, Gauge, Histogram
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from churn_platform.monitor.drift import score_drift
 from churn_platform.serve.model_loader import LoadedModel, load
 from churn_platform.serve.schemas import (
     BatchPredictRequest,
@@ -194,3 +195,57 @@ def predict_batch(
             model_version=model.version,
         ))
     return BatchPredictResponse(predictions=predictions, n=len(predictions))
+
+
+# ----- Drift endpoint ------------------------------------------------------
+
+
+@app.post("/drift/score")
+def drift_score(body: dict):
+    """Score drift between a baseline parquet and a current parquet.
+
+    Request body:
+        {
+          "baseline_path": "/path/to/train.parquet",
+          "current_path":  "/path/to/recent.parquet"
+        }
+
+    Both paths must be reachable from inside the serving container. Use the
+    bind-mounted /opt/jobs/data path for local files.
+
+    Response: drift report summary + per-feature scores.
+    """
+    import pandas as pd
+
+    baseline_path = body.get("baseline_path")
+    current_path = body.get("current_path")
+    if not baseline_path or not current_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Both 'baseline_path' and 'current_path' are required.",
+        )
+
+    try:
+        baseline_df = pd.read_parquet(baseline_path)
+        current_df = pd.read_parquet(current_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read parquet: {e}")
+
+    report = score_drift(baseline_df, current_df)
+    return {
+        "n_features_checked": len({r.feature for r in report.results}),
+        "severe_features": report.severe_features,
+        "moderate_features": report.moderate_features,
+        "has_severe": report.has_severe,
+        "should_retrain": report.has_severe,
+        "results": [
+            {
+                "feature": r.feature,
+                "method": r.method,
+                "score": round(r.score, 4),
+                "pvalue": round(r.pvalue, 4) if r.pvalue is not None else None,
+                "severity": r.severity,
+            }
+            for r in report.results
+        ],
+    }
