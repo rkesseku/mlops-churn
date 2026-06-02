@@ -68,6 +68,18 @@ data-drifted:  ## Generate 100K-row covariate-drifted scoring data for the drift
 data-sample:  ## Generate a tiny 1K-row sample for tests, commit-safe
 	$(MAKE) data ROWS=1000 OUT=data/samples/customers_sample.parquet
 
+# ---------- Training ----------
+
+.PHONY: train
+train:  ## Train XGBoost with Optuna (50 trials) and register in MLflow
+	@set -a; . ./.env; set +a; \
+		python -m churn_platform.train.train
+
+.PHONY: train-quick
+train-quick:  ## Quick 5-trial training run for smoke-testing the pipeline
+	@set -a; . ./.env; set +a; \
+		python -m churn_platform.train.train --n-trials 5 --sample-size 50000
+
 # ---------- Features ----------
 
 .PHONY: features
