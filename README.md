@@ -26,7 +26,7 @@ before the next begins.
 - [x] Milestone 3 — Synthetic data generator
 - [x] Milestone 4 — Spark feature pipeline
 - [x] Milestone 5 — Training with Optuna + MLflow tracking
-- [ ] Milestone 6 — FastAPI serving from MLflow registry
+- [x] Milestone 6 — FastAPI serving from MLflow registry
 - [ ] Milestone 7 — Prometheus + Grafana wiring
 - [ ] Milestone 8 — Drift detection + retrain trigger
 
