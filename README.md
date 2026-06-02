@@ -28,7 +28,7 @@ before the next begins.
 - [x] Milestone 5 — Training with Optuna + MLflow tracking
 - [x] Milestone 6 — FastAPI serving from MLflow registry
 - [x] Milestone 7 — Prometheus + Grafana wiring
-- [ ] Milestone 8 — Drift detection + retrain trigger
+- [x] Milestone 8 — Drift detection + retrain trigger
 
 ## License
 
