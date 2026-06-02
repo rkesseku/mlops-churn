@@ -1,0 +1,80 @@
+{
+  "title": "Churn Serving",
+  "uid": "churn-serving",
+  "tags": ["churn", "mlops"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {"from": "now-30m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Predictions / sec (1m)",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 6},
+      "targets": [{
+        "expr": "sum(rate(churn_predictions_total[1m]))",
+        "refId": "A"
+      }],
+      "fieldConfig": {"defaults": {"unit": "ops"}}
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "p95 request latency (1m)",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 6},
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[1m])) by (le))",
+        "refId": "A"
+      }],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Model version",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 6},
+      "targets": [{
+        "expr": "model_version_info",
+        "legendFormat": "{{name}} v{{version}}",
+        "refId": "A"
+      }],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "name"}
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Total predictions",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 6},
+      "targets": [{
+        "expr": "sum(churn_predictions_total)",
+        "refId": "A"
+      }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Prediction rate by label",
+      "gridPos": {"x": 0, "y": 6, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "rate(churn_predictions_total[1m])",
+        "legendFormat": "churn_label={{churn_label}}",
+        "refId": "A"
+      }],
+      "fieldConfig": {"defaults": {"unit": "ops"}}
+    },
+    {
+      "id": 6,
+      "type": "heatmap",
+      "title": "Predicted churn probability distribution",
+      "gridPos": {"x": 12, "y": 6, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "sum(increase(churn_probability_bucket[1m])) by (le)",
+        "format": "heatmap",
+        "legendFormat": "{{le}}",
+        "refId": "A"
+      }]
+    }
+  ]
+}
