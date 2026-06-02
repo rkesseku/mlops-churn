@@ -1,12 +1,11 @@
 # Docker Compose stack for the MLOps churn platform.
 # Phase 2: Postgres + MinIO + MLflow.
-# Later phases will add: Spark, FastAPI serving, Prometheus, Grafana.
+# Phase 4: + Spark.
+# Later phases: + FastAPI serving, Prometheus, Grafana.
 
 services:
   # ------------------------------------------------------------------
   # Postgres — backs MLflow's experiment metadata store.
-  # Stores: runs, params, metrics, model registry rows.
-  # Not exposed publicly in production; only MLflow needs to reach it.
   # ------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
@@ -26,9 +25,7 @@ services:
       retries: 5
 
   # ------------------------------------------------------------------
-  # MinIO — S3-compatible object storage for model artifacts.
-  # MLflow uploads trained models, plots, etc. here.
-  # Web console on :9001, S3 API on :9000.
+  # MinIO — S3-compatible object storage.
   # ------------------------------------------------------------------
   minio:
     image: minio/minio:RELEASE.2024-10-13T13-34-11Z
@@ -38,8 +35,8 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"   # S3 API (what MLflow talks to)
-      - "9001:9001"   # Web console (what you open in the browser)
+      - "9000:9000"
+      - "9001:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -49,9 +46,7 @@ services:
       retries: 5
 
   # ------------------------------------------------------------------
-  # MinIO init — one-shot container that creates the buckets we need
-  # on first boot. Without buckets, MLflow's first artifact upload fails.
-  # `mc` is MinIO's official CLI.
+  # MinIO init — creates the buckets we need on first boot.
   # ------------------------------------------------------------------
   minio-init:
     image: minio/mc:RELEASE.2024-10-08T09-37-26Z
@@ -70,8 +65,6 @@ services:
 
   # ------------------------------------------------------------------
   # MLflow — tracking server + model registry.
-  # Connects to Postgres for metadata, MinIO for artifacts.
-  # UI on :5000.
   # ------------------------------------------------------------------
   mlflow:
     build:
@@ -83,9 +76,6 @@ services:
       minio:
         condition: service_healthy
     environment:
-      # MLflow uses boto3 under the hood to talk to MinIO. The boto3
-      # client reads these env vars — they're the standard AWS names,
-      # which is why MinIO works as a drop-in S3 replacement.
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
@@ -98,9 +88,44 @@ services:
     ports:
       - "5000:5000"
 
-# Named volumes — Docker manages where these actually live on disk.
-# They survive `docker compose down` so your data isn't lost.
-# To wipe everything: `docker compose down -v` (the -v deletes volumes).
+  # ------------------------------------------------------------------
+  # Spark — distributed data processing.
+  # We use a custom image that bundles PySpark with S3A (Hadoop-AWS) jars
+  # so the job can read/write to MinIO. The container also has our Python
+  # code mounted in, so spark-submit can run scripts that import
+  # `churn_platform.*` modules.
+  #
+  # This runs Spark in standalone *single-node* mode — driver and one
+  # executor in the same container. For 1M rows that's correct; for a
+  # real cluster, replace this with separate master/worker services.
+  # ------------------------------------------------------------------
+  spark:
+    build:
+      context: ./docker/spark
+    container_name: churn-spark
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      # Spark itself uses these to talk to MinIO via S3A.
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      # Memory caps so Spark doesn't try to eat all 32 GB.
+      SPARK_DRIVER_MEMORY: 2g
+      SPARK_EXECUTOR_MEMORY: 4g
+    volumes:
+      # Mount the project source so spark-submit can find our code.
+      # Read-only because the Spark job shouldn't be modifying our source.
+      - ./src:/opt/jobs/src:ro
+      # Mount the raw-data dir so we can `spark-submit` against local files
+      # during development without round-tripping through MinIO.
+      - ./data:/opt/jobs/data
+    ports:
+      - "8080:8080"   # Spark master UI
+      - "4040:4040"   # Spark application UI (live during job runs)
+    # Keep the container alive; we'll exec into it with `spark-submit`.
+    command: tail -f /dev/null
+
 volumes:
   postgres-data:
   minio-data:

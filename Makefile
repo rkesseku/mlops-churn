@@ -68,6 +68,19 @@ data-drifted:  ## Generate 100K-row covariate-drifted scoring data for the drift
 data-sample:  ## Generate a tiny 1K-row sample for tests, commit-safe
 	$(MAKE) data ROWS=1000 OUT=data/samples/customers_sample.parquet
 
+# ---------- Features ----------
+
+.PHONY: features
+features:  ## Run the Spark feature pipeline (1M rows -> train/val/test parquet)
+	docker compose exec spark spark-submit \
+		/opt/jobs/src/churn_platform/features/pipeline.py \
+		--input /opt/jobs/data/raw/customers.parquet \
+		--output /opt/jobs/data/features
+
+.PHONY: features-clean
+features-clean:  ## Delete generated feature parquets (uses sudo because Spark writes as a different uid)
+	sudo rm -rf data/features
+
 # ---------- Quality ----------
 
 .PHONY: test
