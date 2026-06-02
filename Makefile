@@ -68,6 +68,20 @@ data-drifted:  ## Generate 100K-row covariate-drifted scoring data for the drift
 data-sample:  ## Generate a tiny 1K-row sample for tests, commit-safe
 	$(MAKE) data ROWS=1000 OUT=data/samples/customers_sample.parquet
 
+# ---------- Serving ----------
+
+.PHONY: serve
+serve:  ## Bring up the FastAPI serving container (rebuild if model changed)
+	docker compose up -d --build serving
+	@echo
+	@echo "Serving:    http://localhost:8000"
+	@echo "API docs:   http://localhost:8000/docs"
+	@echo "Health:     http://localhost:8000/health"
+
+.PHONY: serve-logs
+serve-logs:  ## Tail the serving container's logs
+	docker compose logs -f serving
+
 # ---------- Training ----------
 
 .PHONY: train
