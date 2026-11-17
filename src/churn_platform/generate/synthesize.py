@@ -8,7 +8,7 @@ separable.
 
 Design (see Phase 3 design walkthrough for the full reasoning):
   - 15 features mixing numeric, categorical, boolean, and timestamp types
-  - Churn is a logistic combination of weighted features + tenure×contract
+  - Churn is a logistic combination of weighted features + tenurexcontract
     interaction + gaussian noise
   - Base churn rate is calibrated to ~27% (matches Telco-like datasets)
   - Realistic missingness: ~30% of nps_score is null; total_charges is null
@@ -64,7 +64,7 @@ class GenParams:
     n_rows: int = 1_000_000
     seed: int = 42
     drift_mode: DriftMode = "none"
-    # 0.0 = no drift, 1.0 = maximum drift. Most realistic drift is 0.2–0.5.
+    # 0.0 = no drift, 1.0 = maximum drift. Most realistic drift is 0.2-0.5.
     drift_strength: float = 0.0
 
     # Base churn rate target (the logistic intercept is calibrated to hit this).
@@ -210,7 +210,7 @@ def _sample_features(p: GenParams, rng: np.random.Generator) -> pd.DataFrame:
         0.0,
     ).round(2)
 
-    # NPS score 0–10. Realistically null for non-respondents.
+    # NPS score 0-10. Realistically null for non-respondents.
     nps_raw = rng.integers(0, 11, size=n).astype(np.float32)
     response_mask = rng.random(size=n) < p.nps_response_rate
     nps = np.where(response_mask, nps_raw, np.nan)

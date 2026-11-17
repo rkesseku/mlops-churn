@@ -1,0 +1,58 @@
+# Local overlay for kind / minikube / Docker Desktop.
+# Build and load images first (see README and the k8s-build make target).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+components:
+  - ../../components/mlflow
+
+# Dev-only placeholder credentials so the pods start; NOT for real clusters.
+secretGenerator:
+  - name: churn-secrets
+    namespace: mlops-churn
+    literals:
+      - AWS_ACCESS_KEY_ID=local-dev
+      - AWS_SECRET_ACCESS_KEY=local-dev-not-a-secret
+    options:
+      disableNameSuffixHash: true
+
+patches:
+  - target:
+      kind: Deployment
+      name: churn-serving
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 256Mi
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: churn-serving
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 2
+  - target:
+      kind: CronJob
+      name: churn-retrain
+    patch: |-
+      - op: replace
+        path: /spec/jobTemplate/spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+      - op: replace
+        path: /spec/jobTemplate/spec/template/spec/containers/0/resources/requests/memory
+        value: 512Mi
+      - op: replace
+        path: /spec/jobTemplate/spec/template/spec/containers/0/resources/requests/cpu
+        value: 250m

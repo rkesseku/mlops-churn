@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: mlops-churn
+
+# NOTE: secret.template.yaml is intentionally NOT listed here. Create the
+# `churn-secrets` Secret yourself (see README) or let an overlay generate it.
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - pvc.yaml
+  - serving-deployment.yaml
+  - serving-service.yaml
+  - serving-hpa.yaml
+  - pushgateway.yaml
+  - retrain-cronjob.yaml
+
+images:
+  - name: churn-serving
+    newName: churn-serving
+    newTag: latest
+  - name: churn-retrain
+    newName: churn-retrain
+    newTag: latest

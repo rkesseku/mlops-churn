@@ -1,0 +1,60 @@
+# Short-lived retrain jobs cannot be scraped, so they push decision metrics here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pushgateway
+  namespace: mlops-churn
+  labels:
+    app.kubernetes.io/name: pushgateway
+    app.kubernetes.io/part-of: mlops-churn
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pushgateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pushgateway
+        app.kubernetes.io/part-of: mlops-churn
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9091"
+    spec:
+      containers:
+        - name: pushgateway
+          image: prom/pushgateway:v1.9.0
+          ports:
+            - name: http
+              containerPort: 9091
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pushgateway
+  namespace: mlops-churn
+  labels:
+    app.kubernetes.io/name: pushgateway
+    app.kubernetes.io/part-of: mlops-churn
+spec:
+  selector:
+    app.kubernetes.io/name: pushgateway
+  ports:
+    - name: http
+      port: 9091
+      targetPort: http

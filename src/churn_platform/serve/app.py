@@ -229,7 +229,7 @@ def drift_score(body: dict):
         baseline_df = pd.read_parquet(baseline_path)
         current_df = pd.read_parquet(current_path)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not read parquet: {e}")
+        raise HTTPException(status_code=400, detail=f"Could not read parquet: {e}") from e
 
     report = score_drift(baseline_df, current_df)
     return {

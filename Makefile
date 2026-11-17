@@ -86,8 +86,23 @@ demo-drift:  ## Generate drifted data, score against baseline, print verdict
 	@echo "=== Step 3/3: if should_retrain=true, run 'make train' to refit ==="
 
 .PHONY: retrain
-retrain:  ## Alias for make train; clarifies intent in the drift-response workflow
+retrain:  ## Unconditional retrain (alias for make train); see retrain-auto for the gated loop
 	$(MAKE) train
+
+# Paths for the automated loop; override on the command line.
+REF_DATA     ?= data/raw/customers.parquet
+CUR_DATA     ?= data/raw/customers_drifted.parquet
+RETRAIN_ARGS ?=
+
+.PHONY: retrain-auto
+retrain-auto:  ## Drift check -> train -> compare with champion -> promote only if better
+	@set -a; . ./.env; set +a; \
+		python -m churn_platform.retrain --reference $(REF_DATA) --current $(CUR_DATA) $(RETRAIN_ARGS)
+
+.PHONY: retrain-dry-run
+retrain-dry-run:  ## Run only the drift gate and write a decision record (never trains)
+	@set -a; . ./.env; set +a; \
+		python -m churn_platform.retrain --reference $(REF_DATA) --current $(CUR_DATA) --dry-run
 
 # ---------- Serving ----------
 
@@ -131,8 +146,12 @@ features-clean:  ## Delete generated feature parquets (uses sudo because Spark w
 # ---------- Quality ----------
 
 .PHONY: test
-test:  ## Run the test suite
+test:  ## Run the test suite (Spark/xgboost tests auto-skip when those libs are missing)
 	$(PYTHON) -m pytest tests/ -v
+
+.PHONY: test-fast
+test-fast:  ## Unit tests only, skipping the slow Spark tests
+	$(PYTHON) -m pytest tests/ -v -m "not spark"
 
 .PHONY: lint
 lint:  ## Lint with ruff
@@ -141,6 +160,36 @@ lint:  ## Lint with ruff
 .PHONY: format
 format:  ## Auto-format with ruff
 	ruff format .
+
+# ---------- Kubernetes ----------
+
+K8S_OVERLAY  ?= k8s/overlays/local
+KIND_CLUSTER ?= kind
+
+.PHONY: k8s-build
+k8s-build:  ## Build serving + retrain images for the local overlay
+	docker build -f docker/serving/Dockerfile -t churn-serving:latest .
+	docker build -f docker/retrain/Dockerfile -t churn-retrain:latest .
+
+.PHONY: k8s-load-kind
+k8s-load-kind:  ## Load the locally built images into a kind cluster
+	kind load docker-image churn-serving:latest churn-retrain:latest --name $(KIND_CLUSTER)
+
+.PHONY: k8s-render
+k8s-render:  ## Print the rendered manifests (kubectl kustomize)
+	kubectl kustomize $(K8S_OVERLAY)
+
+.PHONY: k8s-apply
+k8s-apply:  ## Apply the kustomize overlay (K8S_OVERLAY=k8s/base to skip the local overlay)
+	kubectl apply -k $(K8S_OVERLAY)
+
+.PHONY: k8s-delete
+k8s-delete:  ## Delete everything the overlay created (including PVCs and the namespace)
+	kubectl delete -k $(K8S_OVERLAY) --ignore-not-found
+
+.PHONY: k8s-retrain-now
+k8s-retrain-now:  ## Trigger the retrain CronJob once, immediately
+	kubectl -n mlops-churn create job --from=cronjob/churn-retrain churn-retrain-manual-$$(date +%s)
 
 # ---------- Coming in later phases ----------
 # features      Run Spark feature engineering job

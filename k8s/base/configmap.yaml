@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: churn-config
+  namespace: mlops-churn
+  labels:
+    app.kubernetes.io/part-of: mlops-churn
+data:
+  # MLflow tracking/registry. To use an EXTERNAL MLflow (recommended outside
+  # local dev), set this to its URL, e.g. https://mlflow.internal.example:5000,
+  # and do not include the optional k8s/components/mlflow component.
+  MLFLOW_TRACKING_URI: "http://mlflow:5000"
+  # Only needed when MLflow stores artifacts in S3/MinIO and clients write directly.
+  MLFLOW_S3_ENDPOINT_URL: ""
+
+  # Retrain job (see churn_platform.retrain). Paths are inside the churn-data PVC.
+  RETRAIN_REFERENCE_PATH: "/data/raw/customers_baseline.parquet"
+  RETRAIN_CURRENT_PATH: "/data/raw/customers_current.parquet"
+  RETRAIN_FEATURES_DIR: "/data/features"
+  RETRAIN_DECISION_DIR: "/data/retrain_decisions"
+  RETRAIN_WINDOW_DAYS: "30"
+  RETRAIN_MAX_ROWS: "200000"
+  RETRAIN_MIN_SEVERE_FEATURES: "1"
+  RETRAIN_PROMOTION_MARGIN: "0.002"
+  RETRAIN_METRIC: "auc"
+  RETRAIN_N_TRIALS: "30"
+  # Optional command (no shell) that refreshes RETRAIN_FEATURES_DIR before training.
+  RETRAIN_FEATURES_CMD: ""
+  PUSHGATEWAY_URL: "http://pushgateway:9091"

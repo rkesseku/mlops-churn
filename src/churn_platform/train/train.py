@@ -250,7 +250,17 @@ def evaluate_on_test(model: XGBClassifier, datasets: Datasets) -> dict[str, floa
 # ----- Orchestration --------------------------------------------------------
 
 
-def run(n_trials: int, sample_size: int, features_dir: Path) -> None:
+def run(
+    n_trials: int,
+    sample_size: int,
+    features_dir: Path,
+    set_staging_alias: bool = True,
+) -> str:
+    """Train, register, and return the new registered model version.
+
+    `set_staging_alias=False` registers the version without repointing the
+    `staging` alias (used by the retrain job, which promotes explicitly).
+    """
     configure_mlflow()
     datasets = load_datasets(features_dir)
 
@@ -302,10 +312,12 @@ def run(n_trials: int, sample_size: int, features_dir: Path) -> None:
         # instead. Aliases are mutable named pointers to a specific version:
         # "staging" -> v3 today, v5 tomorrow. Production promotion just
         # repoints "production" to a new version, leaving the old one queryable.
-        client = mlflow.tracking.MlflowClient()
         version = mv.registered_model_version
-        client.set_registered_model_alias(MODEL_NAME, "staging", version)
-        log.info("Set alias %s@staging -> v%s", MODEL_NAME, version)
+        if set_staging_alias:
+            client = mlflow.tracking.MlflowClient()
+            client.set_registered_model_alias(MODEL_NAME, "staging", version)
+            log.info("Set alias %s@staging -> v%s", MODEL_NAME, version)
+        return str(version)
 
 
 # ----- CLI ------------------------------------------------------------------

@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: lint + unit tests (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11"]   # pyproject requires-python is >=3.10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install package + dev tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Unit tests
+        # Spark tests need a JVM and are slow; they are marked `spark` and run
+        # in the separate job below. No MLflow server is required by any test.
+        run: pytest -m "not spark" --cov=churn_platform --cov-report=term-missing
+
+  spark-tests:
+    name: spark feature tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install package + pyspark
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" pyspark
+      - name: Spark tests
+        run: pytest -m spark
+
+  k8s-validate:
+    name: validate k8s manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | tar xz kubeconform
+          sudo mv kubeconform /usr/local/bin/
+      - name: Render and schema-check base
+        run: kubectl kustomize k8s/base | kubeconform -strict -summary -
+      - name: Render and schema-check local overlay
+        run: kubectl kustomize k8s/overlays/local | kubeconform -strict -summary -

@@ -11,6 +11,9 @@ Fast enough for unit tests, deterministic enough for CI.
 from __future__ import annotations
 
 import pytest
+
+pytest.importorskip("pyspark")  # needs pyspark + a JVM; skipped when absent
+
 from pyspark.sql import SparkSession
 
 from churn_platform.features.pipeline import (
@@ -24,6 +27,8 @@ from churn_platform.features.pipeline import (
     split,
     transform,
 )
+
+pytestmark = pytest.mark.spark
 
 
 # ----- Spark session fixture -----------------------------------------------

@@ -52,6 +52,7 @@ dev = [
   "pytest==8.3.3",
   "pytest-cov==6.0.0",
   "ruff==0.7.4",
+  "pyyaml>=6.0",
   "ipython==8.29.0",
 ]
 
@@ -88,3 +89,7 @@ pythonpath = ["src"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 addopts = "-ra --strict-markers --tb=short"
+markers = [
+  "spark: needs pyspark and a JVM (skipped in CI with -m 'not spark')",
+  "heavy: imports xgboost/optuna/mlflow; runs in CI but not in a minimal local env",
+]

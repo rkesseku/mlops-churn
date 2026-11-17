@@ -42,13 +42,13 @@ def baseline_df() -> pd.DataFrame:
 class TestSchema:
     """The dataset must always have the expected shape and columns."""
 
-    EXPECTED_COLUMNS = {
+    EXPECTED_COLUMNS = frozenset({
         "customer_id", "tenure_months", "contract_type", "monthly_charges",
         "total_charges", "payment_method", "internet_service",
         "num_support_calls", "num_logins_30d", "avg_session_minutes",
         "days_since_last_login", "has_paperless_billing", "auto_renew",
         "discount_applied", "nps_score", "event_timestamp", "churned",
-    }
+    })
 
     def test_row_count_matches_request(self, baseline_df):
         assert len(baseline_df) == TEST_N

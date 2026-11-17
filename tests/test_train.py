@@ -9,6 +9,11 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
+
+pytest.importorskip("xgboost")
+pytest.importorskip("optuna")
+pytest.importorskip("mlflow")
+
 from xgboost import XGBClassifier
 
 from churn_platform.train.search_space import DEFAULT_N_TRIALS, suggest_params
@@ -19,6 +24,8 @@ from churn_platform.train.train import (
     _prepare_features,
     evaluate_on_test,
 )
+
+pytestmark = pytest.mark.heavy
 
 
 # ----- Search space ---------------------------------------------------------

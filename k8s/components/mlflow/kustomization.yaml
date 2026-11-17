@@ -1,0 +1,7 @@
+# Optional, dev-only MLflow (SQLite + PVC). Prefer an external, Postgres-backed
+# MLflow in real clusters and point MLFLOW_TRACKING_URI at it instead.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - mlflow.yaml

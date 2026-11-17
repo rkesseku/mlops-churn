@@ -18,7 +18,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # Allowed literal values for categorical features. Same as what the data
 # generator produces; Pydantic rejects anything else with a clear error.
 ContractType = Literal["month-to-month", "one-year", "two-year"]
