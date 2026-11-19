@@ -15,6 +15,7 @@ format:
 ```{=typst}
 #set text(hyphenate: false)
 #set bibliography(title: "References")
+#show cite: set text(fill: rgb("#1f4e9e"))
 #show bibliography: set par(justify: false)
 // Three-rule tables (top, below header, bottom) and bold "Figure N" / "Table N" labels
 #set table.hline(stroke: 0.6pt)
