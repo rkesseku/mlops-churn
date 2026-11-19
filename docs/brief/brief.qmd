@@ -1,8 +1,4 @@
 ---
-title: "MLOps Churn Platform"
-subtitle: "From synthetic data to a drift-triggered retrain job that only promotes a model if it beats the current one"
-author:
-  - name: "Reagan Kesseku · Project brief · github.com/rkesseku/mlops-churn"
 linkcolor: "#1f4e9e"
 format:
   typst:
@@ -27,6 +23,17 @@ format:
 ]
 #show heading.where(level: 2): set text(fill: rgb("#2d2d2d"), size: 11.5pt)
 #let glance(body) = block(fill: rgb("#eef3fb"), stroke: (left: 3pt + rgb("#1f4e9e")), inset: 10pt, radius: 2pt, width: 100%, body)
+// Header: red title, subtitle, author, repository link
+#align(center)[
+  #text(size: 17pt, weight: "bold", fill: rgb("#b91c1c"))[MLOps Churn Platform]
+  #v(0.5em)
+  #text(size: 12pt, weight: "bold")[From synthetic data to a drift-triggered retrain job that only promotes a model if it beats the current one]
+  #v(0.9em)
+  #text(size: 11pt)[Reagan Kesseku, Ph.D.]
+  #linebreak()
+  #text(size: 10pt)[#link("https://github.com/rkesseku/mlops-churn")[github.com/rkesseku/mlops-churn]]
+]
+#v(0.5em)
 ```
 
 ```{=typst}
