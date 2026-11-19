@@ -23,6 +23,11 @@ data:
   RETRAIN_MIN_SEVERE_FEATURES: "1"
   RETRAIN_PROMOTION_MARGIN: "0.002"
   RETRAIN_METRIC: "auc"
+  # Promotion gate: score on the dedicated gate split (never the final test split)
+  # and require the lower bound of a paired-bootstrap CI to clear the margin.
+  RETRAIN_HOLDOUT_SPLIT: "gate"
+  RETRAIN_N_BOOTSTRAP: "1000"
+  RETRAIN_CI_LEVEL: "0.95"
   RETRAIN_N_TRIALS: "30"
   # Optional command (no shell) that refreshes RETRAIN_FEATURES_DIR before training.
   RETRAIN_FEATURES_CMD: ""

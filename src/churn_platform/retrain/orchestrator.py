@@ -4,8 +4,10 @@ One cycle:
   1. load reference + a recent window of current scoring data
   2. run the drift check (monitor.drift.score_drift)
   3. if drift is severe: train a candidate (reusing train.train), register it
-     in MLflow, evaluate candidate AND champion on the same holdout
-  4. promote only if the candidate beats the champion by a margin
+     in MLflow, score candidate AND champion on the same gate holdout (a
+     dedicated split, not the final test split)
+  4. promote only if the lower bound of a paired-bootstrap CI for the
+     improvement clears the margin
   5. write a JSON decision record (always) and optionally push Prometheus metrics
 
 Idempotency: each cycle derives a `run_id` from the data window fingerprints,
@@ -36,6 +38,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
+import numpy as np
 import pandas as pd
 
 from churn_platform.retrain.decision import (
@@ -43,6 +46,8 @@ from churn_platform.retrain.decision import (
     RetrainConfig,
     decide_drift,
     decide_promotion,
+    holdout_metrics,
+    paired_bootstrap_improvement,
 )
 
 log = logging.getLogger("retrain")
@@ -51,7 +56,9 @@ log = logging.getLogger("retrain")
 class Backend(Protocol):
     def champion_version(self) -> str | None: ...
     def train_candidate(self) -> str: ...
-    def evaluate(self, version: str) -> dict[str, float]: ...
+    def holdout_predictions(self, version: str) -> tuple[np.ndarray, np.ndarray]:
+        """(labels, predicted churn probability) on the gate holdout."""
+        ...
     def promote(self, version: str) -> None: ...
     def reject(self, version: str) -> None: ...
 
@@ -122,7 +129,8 @@ def compute_run_id(reference_fp: str, current_fp: str, cfg: RetrainConfig) -> st
     """
     payload = json.dumps(
         [reference_fp, current_fp, cfg.min_severe_features,
-         cfg.promotion_margin, cfg.metric, cfg.force, cfg.dry_run],
+         cfg.promotion_margin, cfg.metric, cfg.force, cfg.dry_run,
+         cfg.n_bootstrap, cfg.ci_level, cfg.bootstrap_seed],
     )
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
@@ -194,13 +202,7 @@ def run_cycle(
     candidate: str | None = None
     try:
         candidate = backend.train_candidate()
-        cand_metrics = backend.evaluate(candidate)
-        champ_metrics = backend.evaluate(champion) if champion is not None else None
-        promo = decide_promotion(
-            cand_metrics[cfg.metric],
-            champ_metrics[cfg.metric] if champ_metrics else None,
-            cfg,
-        )
+        promo = _compare(backend, candidate, champion, cfg)
         if promo.promote:
             backend.promote(candidate)
         else:
@@ -221,6 +223,28 @@ def run_cycle(
     )
     store.put(rec)
     return rec
+
+
+def _compare(backend: Backend, candidate: str, champion: str | None, cfg: RetrainConfig):
+    """Score both models on the gate holdout and apply the promotion rule."""
+    y, p_cand = backend.holdout_predictions(candidate)
+    y, p_cand = np.asarray(y), np.asarray(p_cand)
+    cand_value = holdout_metrics(y, p_cand)[cfg.metric]
+    if champion is None:
+        return decide_promotion(cand_value, None, cfg, n_holdout=len(y))
+    y_champ, p_champ = backend.holdout_predictions(champion)
+    if not np.array_equal(y, np.asarray(y_champ)):
+        raise ValueError("candidate and champion were scored on different holdout rows")
+    p_champ = np.asarray(p_champ)
+    champ_value = holdout_metrics(y, p_champ)[cfg.metric]
+    ci = None
+    if cfg.n_bootstrap > 0:
+        _, lo, hi = paired_bootstrap_improvement(
+            y, p_cand, p_champ, cfg.metric, n_boot=cfg.n_bootstrap, ci_level=cfg.ci_level,
+            seed=cfg.bootstrap_seed,
+        )
+        ci = (lo, hi)
+    return decide_promotion(cand_value, champ_value, cfg, ci=ci, n_holdout=len(y))
 
 
 # ----- CLI ------------------------------------------------------------------
@@ -252,6 +276,13 @@ def build_parser() -> argparse.ArgumentParser:
                    default=float(_env("RETRAIN_PROMOTION_MARGIN", 0.002)))
     p.add_argument("--metric", default=_env("RETRAIN_METRIC", "auc"),
                    choices=["auc", "pr_auc", "logloss"])
+    p.add_argument("--holdout-split", default=_env("RETRAIN_HOLDOUT_SPLIT", "gate"),
+                   help="Features split used by the promotion gate (<features-dir>/<name>"
+                        ".parquet). Must not be the final 'test' split.")
+    p.add_argument("--n-bootstrap", type=int,
+                   default=int(_env("RETRAIN_N_BOOTSTRAP", 1_000)),
+                   help="Paired-bootstrap draws for the improvement CI; 0 = point estimate.")
+    p.add_argument("--ci-level", type=float, default=float(_env("RETRAIN_CI_LEVEL", 0.95)))
     p.add_argument("--n-trials", type=int, default=int(_env("RETRAIN_N_TRIALS", 30)))
     p.add_argument("--sample-size", type=int, default=int(_env("RETRAIN_SAMPLE_SIZE", 100_000)))
     p.add_argument("--features-cmd", default=_env("RETRAIN_FEATURES_CMD", ""),
@@ -282,6 +313,8 @@ def main(argv: list[str] | None = None) -> int:
         min_rows=args.min_rows,
         force=args.force,
         dry_run=args.dry_run,
+        n_bootstrap=args.n_bootstrap,
+        ci_level=args.ci_level,
     )
     now = datetime.now(timezone.utc)
     reference = select_recent_window(pd.read_parquet(args.reference), None, cfg.max_rows, now)
@@ -296,6 +329,7 @@ def main(argv: list[str] | None = None) -> int:
         n_trials=args.n_trials,
         sample_size=args.sample_size,
         features_cmd=args.features_cmd,
+        holdout_split=args.holdout_split,
     )
     record = run_cycle(reference, current, cfg, backend, DecisionStore(args.decision_dir), now=now)
     print(json.dumps(record.to_dict(), indent=2, default=str))

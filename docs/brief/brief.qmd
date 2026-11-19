@@ -47,8 +47,8 @@ format:
 #glance[
 *At a glance* \
 *Problem:* A model that predicts customer churn is only useful while the customers it sees still look like the customers it was trained on. Most projects stop at a notebook; this one asks how a model is retrained, compared and swapped safely when the data shifts. \
-*What I built:* An end-to-end MLOps platform on synthetic data: Spark feature engineering, XGBoost tuned with Optuna, an MLflow model registry, a FastAPI prediction service in Docker, Kubernetes manifests, Prometheus/Grafana monitoring, and a drift check (PSI and KS) that triggers a retrain job. The job promotes the new model only if it beats the current one on the same holdout. \
-*Headline result:* On a small run I executed for this brief (30,000 synthetic customers, 8 Optuna trials), the model reached holdout AUC 0.790. Mild-to-strong input drift was flagged by the drift check, a deliberately weaker candidate was rejected (AUC 0.777 vs 0.790), and re-running on identical inputs was recognised as a duplicate and skipped. The test suite (90 tests) passes. \
+*What I built:* An end-to-end MLOps platform on synthetic data: Spark feature engineering, XGBoost tuned with Optuna, an MLflow model registry, a FastAPI prediction service in Docker, Kubernetes manifests, Prometheus/Grafana monitoring, and a drift check (PSI and KS) that triggers a retrain job. The job promotes the new model only if it beats the current one on a dedicated holdout by a margin that the lower bound of a paired-bootstrap interval must clear. \
+*Headline result:* On a small run I executed for this brief (30,000 synthetic customers, 8 Optuna trials), the model reached test AUC 0.790. Mild-to-strong input drift was flagged by the drift check, a deliberately weaker candidate was rejected on the separate gate split (AUC 0.785 vs 0.800; difference −0.015, 95% CI −0.021 to −0.009), and re-running on identical inputs was recognised as a duplicate and skipped. The test suite (100 tests) passes. \
 *Stack:* Python, PySpark, XGBoost, Optuna, MLflow, FastAPI, Docker, Kubernetes (kustomize), Prometheus, Grafana, GitHub Actions. \
 *Repo:* #link("https://github.com/rkesseku/mlops-churn")[github.com/rkesseku/mlops-churn]
 ]
@@ -62,7 +62,7 @@ A production system therefore has to answer four questions that a notebook never
 
 - **Which model is live right now?** (a registry with named aliases such as `staging` and `production`)
 - **Has the data changed?** (statistical drift checks against the training-time data)
-- **Is a retrained model actually better?** (a champion/challenger comparison on one shared holdout, not a hunch)
+- **Is a retrained model actually better?** (a champion/challenger comparison on one shared holdout, with an interval, not a hunch)
 - **Can this happen automatically without making things worse?** (explicit gates, an audit record per decision, and safe re-runs)
 
 This project builds those pieces and wires them together so the lifecycle can be run and tested locally. The data is synthetic by design: reproducible, drift can be injected on demand, and no real customer information is involved. The package has one module per stage (`generate`, `features`, `train`, `serve`, `monitor`, `retrain`), plus Docker, Prometheus/Grafana and Kubernetes configuration and a CI workflow.
@@ -78,7 +78,7 @@ This project builds those pieces and wires them together so the lifecycle can be
 | Stage | What it does | Where |
 |---------------------|-----------------------------------------------------|--------------------------|
 | Data | Generates synthetic customers (14 behavioural and billing features, an id, a timestamp and a churn label). Can inject covariate, label or concept drift at a chosen strength. | `generate/` |
-| Features | PySpark job adds derived features (charge ratio, engagement score, support calls per login, a risk flag, imputed values) and makes a 70/15/15 split. | `features/` |
+| Features | PySpark job adds derived features (charge ratio, engagement score, support calls per login, a risk flag, imputed values) and makes a 60/15/10/15 train / validation / gate / test split. | `features/` |
 | Training | Optuna [@akiba2019] (TPE sampler) searches XGBoost [@chen2016xgboost] hyperparameters; every trial is logged to MLflow; the best setting is refit on the full training set and registered. | `train/` |
 | Registry | MLflow [@zaharia2018] with Postgres and MinIO. Models are referenced by alias, so promotion is just repointing a name. | `docker-compose.yml` |
 | Serving | FastAPI with `/predict`, `/predict_batch`, `/health`, `/metrics` and `/drift/score`. Loads the registry model once at startup. | `serve/` |
@@ -99,22 +99,22 @@ Each numeric feature is scored with the **Population Stability Index (PSI)** and
 The retrain loop (@fig-flow) makes two decisions, kept as pure functions (no MLflow or Spark imports) so they are unit-tested with fakes.
 
 1. **Drift gate.** Retrain only if at least `min_severe_features` distinct features are severe (default 1). A `--force` flag bypasses it and a `--dry-run` flag stops after it.
-2. **Promotion gate.** Candidate and champion are scored on the *same* holdout. The candidate is promoted only if it beats the champion by at least a margin (default 0.002 AUC; PR-AUC and log loss are also supported, with log loss treated as lower-is-better). If no champion exists, the candidate is promoted. Rejected versions are tagged in the registry.
+2. **Promotion gate.** Candidate and champion are scored on the *same* gate split, a holdout used only for promotion decisions. The final test split is scored once per training run and the gate refuses to use it, so repeated decisions do not wear it out. A paired bootstrap [@efron1993] resamples the gate rows (1,000 draws by default), scoring both models on each resample, and gives a 95% interval for the improvement. The candidate is promoted only if the interval's *lower bound* clears the margin (default 0.002 AUC; PR-AUC and log loss are also supported, with log loss treated as lower-is-better), so a gain within holdout noise is rejected. If no champion exists, the candidate is promoted. Rejected versions are tagged in the registry.
 
 ![The retrain decision path. Every outcome, including skips and errors, writes a JSON decision record.](figures/retrain_flow.png){#fig-flow width=76%}
 
 ## Safe automation
 
 - **Idempotency.** The run id is a hash of the data-window fingerprints and the decision-relevant configuration, deliberately not the champion version. Re-running on unchanged inputs returns `duplicate` without retraining, even after a promotion, and a prior `error` record is retried.
-- **Audit trail.** One atomically written JSON file per run records status, drift detail, both metric values, versions and configuration.
+- **Audit trail.** One atomically written JSON file per run records status, drift detail, both metric values, the improvement interval, versions and configuration.
 
 # Results
 
 All numbers below come from code I ran for this brief at small scale (`docs/brief/run_experiments.py`, output in `results.json`): 30,000 synthetic customers with a 27.4% churn rate, features built with the repository's own Spark transforms, a local SQLite-backed MLflow store in a temporary directory, and the real orchestrator and MLflow backend. A smoke-scale demonstration, not a benchmark.
 
-Setup: 21,063 / 4,473 / 4,464 train / validation / test rows, 25 columns after feature engineering, 8 Optuna trials on 15,000-row subsamples. **Champion (v1) holdout: AUC 0.790, PR-AUC 0.588, log loss 0.466**.
+Setup: 18,101 / 4,420 / 3,015 / 4,464 train / validation / gate / test rows, 25 columns after feature engineering, 8 Optuna trials on 15,000-row subsamples. **Champion (v1) test: AUC 0.790, PR-AUC 0.587, log loss 0.466**; on the gate split it scores AUC 0.800.
 
-![Left: the 8 Optuna trials. Centre: holdout ROC. Right: XGBoost feature importance. Contract type, tenure and the engineered no-renew flag lead.](figures/training.png){#fig-train width=78%}
+![Left: the 8 Optuna trials. Centre: test-split ROC. Right: XGBoost feature importance. Contract type, tenure and the engineered no-renew flag lead.](figures/training.png){#fig-train width=78%}
 
 ## Drift detection
 
@@ -130,19 +130,19 @@ I then ran the real orchestrator against that champion, using covariate drift of
 |-----------------------------------------|-----------|------------------------------------------------|
 | No drift (fresh baseline) | `no_drift` | 0 severe features; nothing trained |
 | Drift, dry run | `dry_run` | Severe: tenure, total charges; nothing trained |
-| Drift, weaker candidate, margin 0.002 | `rejected` | AUC 0.777 vs 0.790 (-0.0136) |
-| Drift, same-recipe candidate, margin 0 | `promoted` | AUC tie; aliases now point to v3 |
+| Drift, weaker candidate, margin 0.002 | `rejected` | Gate AUC 0.785 vs 0.800; Δ −0.015 (CI −0.021, −0.009) |
+| Drift, same-recipe candidate, margin 0 | `promoted` | AUC tie, CI [0, 0]; aliases now point to v3 |
 | Identical inputs re-run | `duplicate` | Skipped; original status reported |
 
-: Retrain outcomes from the real orchestrator and MLflow backend. {#tbl-scen}
+: Retrain outcomes from the real orchestrator and MLflow backend. Promotion comparisons use the 3,015-row gate split and a 1,000-draw paired bootstrap. {#tbl-scen}
 
-The tie in row 4 is worth reading carefully: the candidate was trained on the same features as the champion, so it reproduced the same model exactly. With margin 0 an exact tie passes the gate (improvement 0 is at least 0), which is why the production default is a small positive margin.
+The tie in row 4 is worth reading carefully: the candidate was trained on the same features as the champion, so it reproduced the same model exactly. Both models give identical scores on every gate row, so every bootstrap draw has a difference of exactly 0 and the interval is [0, 0]. With margin 0 an exact tie passes the gate (a lower bound of 0 is at least 0), which is why the production default is a small positive margin. A candidate that differs from the champion only by holdout noise would have an interval straddling zero and be rejected even if its point estimate cleared the margin; the unit tests cover that case.
 
 # What this demonstrates
 
 - **Lifecycle thinking.** Not just a model: registry aliases, a promotion gate, rollback via aliases, and an audit record per decision.
-- **Defensible automation.** Two explicit gates, a promotion margin, idempotent runs and an error-retry path, with decision logic isolated from infrastructure so it can be tested with fakes.
-- **Engineering hygiene.** 90 tests pass locally (including Spark tests, 108 s run on my machine). CI runs lint, unit tests on Python 3.10 and 3.11, a separate Spark job, and manifest validation with `kubeconform`.
+- **Defensible automation.** Two explicit gates, a promotion margin that a paired-bootstrap lower bound must clear on a holdout kept apart from the final test set, idempotent runs and an error-retry path, with decision logic isolated from infrastructure so it can be tested with fakes.
+- **Engineering hygiene.** 100 tests pass locally (including Spark tests). CI runs lint, unit tests on Python 3.10 and 3.11, a separate Spark job, and manifest validation with `kubeconform`.
 
 # Limitations and next steps
 

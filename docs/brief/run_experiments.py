@@ -43,15 +43,15 @@ for mode in ("label", "concept"):
 # ---- Spark features (repo transforms) -> pandas parquet ----
 raw = TMP / "raw"; raw.mkdir()
 base.to_parquet(raw / "base.parquet")
-from churn_platform.features.pipeline import build_spark, transform, split  # noqa: E402
+from churn_platform.features.pipeline import SPLIT_NAMES, build_spark, split, transform  # noqa: E402
 spark = build_spark(); spark.sparkContext.setLogLevel("ERROR")
 sdf = transform(spark.read.parquet(str(raw / "base.parquet")))
 parts = split(sdf)
 feat = TMP / "features"; feat.mkdir()
-for name, p in zip(("train", "val", "test"), parts):
+for name, p in zip(SPLIT_NAMES, parts, strict=True):
     p.toPandas().to_parquet(feat / f"{name}.parquet")
 spark.stop()
-split_sizes = {n: len(pd.read_parquet(feat / f"{n}.parquet")) for n in ("train", "val", "test")}
+split_sizes = {n: len(pd.read_parquet(feat / f"{n}.parquet")) for n in SPLIT_NAMES}
 out["split_sizes"] = split_sizes
 out["n_raw_cols"] = base.shape[1]
 out["n_feature_cols"] = pd.read_parquet(feat / "train.parquet").shape[1]

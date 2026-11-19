@@ -1,7 +1,9 @@
 """Spark feature engineering pipeline.
 
 Reads the raw customer Parquet, derives engineered features, splits into
-train/val/test, and writes Parquet outputs.
+train/val/gate/test, and writes Parquet outputs. `gate` is the holdout the
+retrain job's champion/challenger promotion gate scores on, so the final `test`
+split stays untouched by repeated promotion decisions.
 
 Designed to run two ways:
 
@@ -203,17 +205,20 @@ def transform(df: DataFrame) -> DataFrame:
     return df
 
 
-# ----- Train/val/test split -------------------------------------------------
+# ----- Train/val/gate/test split --------------------------------------------
+
+SPLIT_NAMES = ("train", "val", "gate", "test")
+SPLIT_FRACTIONS = (0.6, 0.15, 0.1, 0.15)
 
 
 def split(
     df: DataFrame,
-    fractions: tuple[float, float, float] = (0.7, 0.15, 0.15),
+    fractions: tuple[float, ...] = SPLIT_FRACTIONS,
     seed: int = 42,
-) -> tuple[DataFrame, DataFrame, DataFrame]:
-    """Random 70/15/15 split. Uses Spark's randomSplit for parallel sampling."""
-    train, val, test = df.randomSplit(list(fractions), seed=seed)
-    return train, val, test
+) -> tuple[DataFrame, ...]:
+    """Random split (default 60/15/10/15 train/val/gate/test), one output per
+    fraction. Uses Spark's randomSplit for parallel sampling."""
+    return tuple(df.randomSplit(list(fractions), seed=seed))
 
 
 # ----- Orchestration --------------------------------------------------------
@@ -229,12 +234,12 @@ def run(spark: SparkSession, input_path: str, output_path: str) -> None:
     features = transform(raw)
     log.info("Applied %d transforms", len(TRANSFORMS))
 
-    train, val, test = split(features)
+    parts = split(features)
 
-    # Write as Parquet to <output_path>/{train,val,test}.parquet.
+    # Write as Parquet to <output_path>/{train,val,gate,test}.parquet.
     # Spark writes each as a directory of part-* files; that's normal.
     out = output_path.rstrip("/")
-    for name, df_split in [("train", train), ("val", val), ("test", test)]:
+    for name, df_split in zip(SPLIT_NAMES, parts, strict=True):
         target = f"{out}/{name}.parquet"
         log.info("Writing %s ...", target)
         df_split.write.mode("overwrite").parquet(target)
@@ -254,7 +259,7 @@ def _cli() -> int:
     parser.add_argument(
         "--output",
         required=True,
-        help="Output directory. Will contain train/val/test subdirs.",
+        help="Output directory. Will contain train/val/gate/test subdirs.",
     )
     args = parser.parse_args()
 

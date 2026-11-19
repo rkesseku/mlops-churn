@@ -40,6 +40,12 @@ class RetrainMetrics:
             ["metric"], registry=self.registry,
         )
 
+        self.ci_lower = Gauge(
+            "churn_retrain_improvement_ci_lower",
+            "Lower CI bound of the candidate-minus-champion improvement (sign-corrected).",
+            ["metric"], registry=self.registry,
+        )
+
     def observe(self, record: dict, now_ts: float) -> None:
         self.runs.labels(outcome=record["status"]).set(1)
         self.last_run.set(now_ts)
@@ -50,6 +56,8 @@ class RetrainMetrics:
             self.candidate.labels(metric=promo["metric"]).set(promo["candidate_value"])
             if promo["champion_value"] is not None:
                 self.champion.labels(metric=promo["metric"]).set(promo["champion_value"])
+            if promo.get("ci_lower") is not None:
+                self.ci_lower.labels(metric=promo["metric"]).set(promo["ci_lower"])
 
     def push(self, url: str, job: str = "churn-retrain") -> None:
         try:

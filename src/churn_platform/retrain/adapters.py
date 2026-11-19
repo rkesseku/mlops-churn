@@ -32,7 +32,14 @@ class MlflowBackend:
         sample_size: int,
         features_cmd: str = "",
         model_name: str = MODEL_NAME,
+        holdout_split: str = "gate",
     ) -> None:
+        if holdout_split == "test":
+            raise ValueError(
+                "the promotion gate must not score on the final test split; "
+                "use the dedicated 'gate' split written by the features job"
+            )
+        self.holdout_split = holdout_split
         self.features_dir = Path(features_dir)
         self.n_trials = n_trials
         self.sample_size = sample_size
@@ -77,24 +84,26 @@ class MlflowBackend:
         self.client.set_registered_model_alias(self.model_name, "candidate", version)
         return version
 
-    def evaluate(self, version: str) -> dict[str, float]:
-        """Score a registered version on the holdout (features_dir/test.parquet)."""
+    def holdout_predictions(self, version: str):
+        """(y, proba) for a registered version on the gate holdout
+        (features_dir/<holdout_split>.parquet). Training never sees it, and it is
+        separate from the final test split, which train.run touches once."""
         import mlflow.xgboost
         import pandas as pd
-        from sklearn.metrics import average_precision_score, log_loss, roc_auc_score
 
         from churn_platform.train.train import _prepare_features
 
+        path = self.features_dir / f"{self.holdout_split}.parquet"
+        if not path.exists():
+            raise FileNotFoundError(
+                f"{path} not found; re-run the features job, which writes a "
+                f"'{self.holdout_split}' split for the promotion gate"
+            )
         model = mlflow.xgboost.load_model(f"models:/{self.model_name}/{version}")
-        X, y = _prepare_features(pd.read_parquet(self.features_dir / "test.parquet"))
+        X, y = _prepare_features(pd.read_parquet(path))
         with contextlib.suppress(Exception):
             X = X[list(model.get_booster().feature_names)]
-        proba = model.predict_proba(X)[:, 1]
-        return {
-            "auc": float(roc_auc_score(y, proba)),
-            "pr_auc": float(average_precision_score(y, proba)),
-            "logloss": float(log_loss(y, proba)),
-        }
+        return y.to_numpy(), model.predict_proba(X)[:, 1]
 
     def promote(self, version: str) -> None:
         for alias in ("production", "staging"):

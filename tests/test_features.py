@@ -17,6 +17,8 @@ pytest.importorskip("pyspark")  # needs pyspark + a JVM; skipped when absent
 from pyspark.sql import SparkSession
 
 from churn_platform.features.pipeline import (
+    SPLIT_FRACTIONS,
+    SPLIT_NAMES,
     add_charge_ratio,
     add_engagement_score,
     add_risk_flag_no_renew_m2m,
@@ -242,9 +244,21 @@ class TestSplit:
 
     def test_split_is_deterministic(self, spark):
         df = spark.range(1000).withColumnRenamed("id", "customer_id")
-        train1, _, _ = split(df, seed=42)
-        train2, _, _ = split(df, seed=42)
+        train1 = split(df, seed=42)[0]
+        train2 = split(df, seed=42)[0]
         # Same seed should give identical row sets.
         ids1 = {r.customer_id for r in train1.collect()}
         ids2 = {r.customer_id for r in train2.collect()}
         assert ids1 == ids2
+
+
+    def test_default_split_has_separate_gate_holdout(self, spark):
+        """Default split writes a promotion-gate holdout disjoint from val and test."""
+        assert SPLIT_NAMES == ("train", "val", "gate", "test")
+        assert abs(sum(SPLIT_FRACTIONS) - 1) < 1e-9
+        df = spark.range(5000).withColumnRenamed("id", "customer_id")
+        parts = split(df, seed=42)
+        assert len(parts) == 4
+        ids = [{r.customer_id for r in p.collect()} for p in parts]
+        assert sum(len(i) for i in ids) == 5000
+        assert len(set().union(*ids)) == 5000  # pairwise disjoint

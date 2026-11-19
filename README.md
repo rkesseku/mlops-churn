@@ -33,7 +33,7 @@ problem, with every stage wired together and reproducible locally.
 | Stage | Code | Notes |
 |-------|------|-------|
 | Data | `src/churn_platform/generate/` | Synthetic customers, optional covariate/concept drift injection |
-| Features | `src/churn_platform/features/pipeline.py` | PySpark; writes train/val/test parquet |
+| Features | `src/churn_platform/features/pipeline.py` | PySpark; writes train/val/gate/test parquet (60/15/10/15) |
 | Training | `src/churn_platform/train/` | Optuna (TPE) search, XGBoost, every trial logged to MLflow |
 | Registry | MLflow + Postgres + MinIO (docker compose) | Models referenced by alias (`staging`, `production`) |
 | Serving | `src/churn_platform/serve/` | FastAPI: `/predict`, `/predict_batch`, `/health`, `/metrics`, `/drift/score` |
@@ -52,7 +52,7 @@ touch .env                   # the make targets source ./.env (defaults work)
 
 make up                      # Postgres + MinIO + MLflow  (MLflow: http://localhost:5000)
 make data ROWS=200000        # synthetic raw data -> data/raw/customers.parquet
-make features                # Spark feature job -> data/features/{train,val,test}.parquet
+make features                # Spark feature job -> data/features/{train,val,gate,test}.parquet
 make train-quick             # 5-trial Optuna run, registers churn_xgboost@staging in MLflow
 make serve                   # FastAPI at http://localhost:8000 (docs at /docs)
 docker compose up -d prometheus grafana   # Prometheus :9090, Grafana :3000
@@ -95,12 +95,20 @@ Run `make help` for the full list. The main ones:
    feature parquet first.
 4. **Champion/challenger.** The champion is the version behind alias
    `production` (falling back to `staging`). Candidate and champion are both
-   scored on the same holdout (`features/test.parquet`).
-5. **Promotion gate.** Promote only if the candidate beats the champion by at
-   least `--promotion-margin` on `--metric` (`auc` default; `pr_auc`, `logloss`
-   supported). If there is no champion, the candidate is promoted. Promotion
-   repoints the `production` and `staging` aliases; rejected versions are
-   tagged `retrain_decision=rejected`.
+   scored on the same dedicated **gate** holdout (`features/gate.parquet`,
+   `--holdout-split`). It is separate from `val` (used for Optuna and early
+   stopping) and from `test`, which `train.run` scores once per training run and
+   which the gate refuses to use, so repeated promotion decisions never reuse the
+   final test set.
+5. **Promotion gate.** A paired bootstrap over the gate rows (both models scored
+   on the same resampled rows, `--n-bootstrap` draws, default 1000) gives a
+   `--ci-level` (default 95%) interval for the sign-corrected improvement on
+   `--metric` (`auc` default; `pr_auc`, `logloss` supported). Promote only if
+   the **lower bound** is at least `--promotion-margin` (default 0.002), so a
+   gain that is within holdout noise is rejected; `--n-bootstrap 0` falls back
+   to the point estimate. If there is no champion, the candidate is promoted.
+   Promotion repoints the `production` and `staging` aliases; rejected versions
+   are tagged `retrain_decision=rejected`.
 6. **Decision record.** A JSON file per run is written to `--decision-dir`
    with status (`no_drift`, `dry_run`, `promoted`, `rejected`, `error`,
    `insufficient_data`, `duplicate`), drift detail, metrics and config.
@@ -111,7 +119,8 @@ decision-relevant config (not the champion, which changes on promotion). Re-runn
 
 **Metrics.** If `PUSHGATEWAY_URL` / `--pushgateway-url` is set, the job pushes
 `churn_retrain_last_outcome`, `churn_retrain_severe_drift_features`,
-`churn_retrain_candidate_metric`, `churn_retrain_champion_metric` and
+`churn_retrain_candidate_metric`, `churn_retrain_champion_metric`,
+`churn_retrain_improvement_ci_lower` and
 `churn_retrain_last_run_timestamp_seconds`.
 
 Scope notes: serving pods pick up a promoted model when they next start (for
