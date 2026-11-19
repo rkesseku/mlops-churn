@@ -76,7 +76,7 @@ This project builds those pieces and wires them together so the lifecycle can be
 ## How the pieces fit together
 
 | Stage | What it does | Where |
-|-----|----------------------------|-------|
+|---------------------|-----------------------------------------------------|--------------------------|
 | Data | Generates synthetic customers (14 behavioural and billing features, an id, a timestamp and a churn label). Can inject covariate, label or concept drift at a chosen strength. | `generate/` |
 | Features | PySpark job adds derived features (charge ratio, engagement score, support calls per login, a risk flag, imputed values) and makes a 70/15/15 split. | `features/` |
 | Training | Optuna [@akiba2019] (TPE sampler) searches XGBoost [@chen2016xgboost] hyperparameters; every trial is logged to MLflow; the best setting is refit on the full training set and registered. | `train/` |
@@ -86,7 +86,7 @@ This project builds those pieces and wires them together so the lifecycle can be
 | Drift and retrain | PSI and KS per feature, a severity gate, training, a promotion gate, and a JSON decision record. | `monitor/`, `retrain/` |
 | Deployment | Kustomize base plus a local overlay: Deployment with probes, Service, autoscaler, daily CronJob, Pushgateway. | `k8s/` |
 
-: The stages of the platform. {#tbl-stages}
+: The stages of the platform. {#tbl-stages tbl-colwidths="[15,63,22]"}
 
 # Design decisions and rationale
 
@@ -127,7 +127,7 @@ I generated fresh baseline-like data and covariate-drifted data (older customer 
 I then ran the real orchestrator against that champion, using covariate drift of strength 0.8 as the "current" data.
 
 | Scenario | Outcome | Evidence |
-|------------|---|-------------|
+|-----------------------------------------|-----------|------------------------------------------------|
 | No drift (fresh baseline) | `no_drift` | 0 severe features; nothing trained |
 | Drift, dry run | `dry_run` | Severe: tenure, total charges; nothing trained |
 | Drift, weaker candidate, margin 0.002 | `rejected` | AUC 0.777 vs 0.790 (-0.0136) |
