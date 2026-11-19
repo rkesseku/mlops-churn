@@ -16,6 +16,11 @@ format:
 
 ```{=typst}
 #set text(hyphenate: false)
+// Three-rule tables (top, below header, bottom) and bold "Figure N" / "Table N" labels
+#set table.hline(stroke: 0.6pt)
+#show table: it => box(stroke: (top: 1pt, bottom: 1pt), it)
+#show figure.caption: it => context [#strong[#it.supplement~#it.counter.display(it.numbering)#it.separator]#it.body]
+#show table: set par(justify: false)
 #show heading.where(level: 1): it => block(above: 1.2em, below: 0.6em)[
   #set text(fill: rgb("#1f4e9e"), size: 14pt, weight: "bold")
   #it
