@@ -106,7 +106,7 @@ The retrain loop (@fig-flow) makes two decisions, kept as pure functions (no MLf
 1. **Drift gate.** Retrain only if at least `min_severe_features` distinct features are severe (default 1). A `--force` flag bypasses this gate, and a `--dry-run` flag stops the run after it.
 2. **Promotion gate.** Candidate and champion are scored on the *same* gate split, a holdout used only for promotion decisions. The final test split is scored once per training run, and the gate refuses to use it, so repeated decisions do not wear it out. A paired bootstrap [@efron1993] resamples the gate rows (1,000 draws by default), scoring both models on each resample, and gives a 95% interval for the improvement. The candidate is promoted only if the interval's *lower bound* clears the margin (default 0.002 AUC), so a gain within holdout noise is rejected. PR-AUC and log loss are also supported, with log loss treated as lower-is-better. If no champion exists, the candidate is promoted. Rejected versions are tagged in the registry.
 
-![The retrain decision path. Every outcome, including skips and errors, writes a JSON decision record.](figures/retrain_flow.png){#fig-flow width=76%}
+![The retrain decision path. Every outcome writes a JSON decision record, including skips, dry runs and errors. The one exception is a duplicate run, which only reports the record already on file.](figures/retrain_flow.png){#fig-flow width=76%}
 
 ## Safe automation
 
