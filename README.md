@@ -13,8 +13,8 @@ systems have to answer harder questions: How do we retrain when the data
 distribution shifts? How do we know which model is in production? How do we
 roll back safely? How do we detect silent degradation before customers do?
 
-This project demonstrates the full MLOps lifecycle on a high-business-value
-problem, with every stage wired together and reproducible locally.
+This project covers the full MLOps lifecycle on a problem with real business
+value. Every stage is wired together and reproducible locally.
 
 ## Architecture
 
@@ -83,10 +83,10 @@ Run `make help` for the full list. The main ones:
 `python -m churn_platform.retrain` (or `make retrain-auto`) runs one cycle:
 
 1. **Windowing.** Loads the reference (training-time) data and the current
-   scoring data. Rows are limited to the last `--window-days` (when an
+   scoring data. Rows are limited to the most recent `--window-days` days (when an
    `event_timestamp` column exists) and capped at `--max-rows` with a seeded
    sample.
-2. **Drift gate.** Runs `monitor.drift.score_drift`. Retrain only if at least
+2. **Drift gate.** Runs `monitor.drift.score_drift`. Retraining proceeds only if at least
    `--min-severe-features` distinct features are `severe` (PSI > 0.25, or a
    significant and large KS result). `--force` bypasses the gate.
 3. **Train.** Reuses `train.train.run` (Optuna + XGBoost) and registers a new
@@ -97,17 +97,17 @@ Run `make help` for the full list. The main ones:
    `production` (falling back to `staging`). Candidate and champion are both
    scored on the same dedicated **gate** holdout (`features/gate.parquet`,
    `--holdout-split`). It is separate from `val` (used for Optuna and early
-   stopping) and from `test`, which `train.run` scores once per training run and
-   which the gate refuses to use, so repeated promotion decisions never reuse the
+   stopping) and from `test`. `train.run` scores `test` once per training run, and
+   the gate refuses to use it, so repeated promotion decisions never reuse the
    final test set.
 5. **Promotion gate.** A paired bootstrap over the gate rows (both models scored
    on the same resampled rows, `--n-bootstrap` draws, default 1000) gives a
    `--ci-level` (default 95%) interval for the sign-corrected improvement on
-   `--metric` (`auc` default; `pr_auc`, `logloss` supported). Promote only if
+   `--metric` (`auc` by default, `pr_auc` and `logloss` also supported). Promote only if
    the **lower bound** is at least `--promotion-margin` (default 0.002), so a
-   gain that is within holdout noise is rejected; `--n-bootstrap 0` falls back
-   to the point estimate. If there is no champion, the candidate is promoted.
-   Promotion repoints the `production` and `staging` aliases; rejected versions
+   gain that is within holdout noise is rejected. Setting `--n-bootstrap 0` falls
+   back to the point estimate. If there is no champion, the candidate is promoted.
+   Promotion repoints the `production` and `staging` aliases, and rejected versions
    are tagged `retrain_decision=rejected`.
 6. **Decision record.** A JSON file per run is written to `--decision-dir`
    with status (`no_drift`, `dry_run`, `promoted`, `rejected`, `error`,
@@ -115,7 +115,7 @@ Run `make help` for the full list. The main ones:
 
 **Idempotency.** The run id is a hash of the data window fingerprints and the
 decision-relevant config (not the champion, which changes on promotion). Re-running on unchanged inputs returns
-`duplicate` without retraining; a previous `error` record is retried.
+`duplicate` without retraining. A run whose previous record is `error` is retried.
 
 **Metrics.** If `PUSHGATEWAY_URL` / `--pushgateway-url` is set, the job pushes
 `churn_retrain_last_outcome`, `churn_retrain_severe_drift_features`,
@@ -124,9 +124,9 @@ decision-relevant config (not the champion, which changes on promotion). Re-runn
 `churn_retrain_last_run_timestamp_seconds`.
 
 Scope notes: serving pods pick up a promoted model when they next start (for
-example `kubectl rollout restart deploy/churn-serving`); there is no hot
+example `kubectl rollout restart deploy/churn-serving`). There is no hot
 reload. Feature generation for a new data window is Spark-based and is not
-bundled into the CronJob; supply it through `--features-cmd` or an upstream job
+bundled into the CronJob, so supply it through `--features-cmd` or an upstream job
 that writes `RETRAIN_FEATURES_DIR`.
 
 ## Kubernetes
@@ -159,7 +159,7 @@ For a real cluster: push the images to a registry, set `images:` in a new
 overlay, create the `churn-secrets` Secret from `k8s/base/secret.template.yaml`
 (or your secret manager), edit the ConfigMap, then `kubectl apply -k <overlay>`.
 Prometheus must discover pods through the `prometheus.io/*` annotations
-(annotation-based scrape config); a Prometheus/Grafana stack is not included in
+(annotation-based scrape config). A Prometheus/Grafana stack is not included in
 `k8s/`. The CronJob expects the reference/current raw parquet and the feature
 parquet on the `churn-data` PVC.
 
@@ -180,7 +180,7 @@ and 3.11, a separate Spark test job, and manifest validation with
 
 ## Status
 
-Built incrementally; each milestone has tests and/or a runnable demo.
+Built incrementally. Each milestone has tests and/or a runnable demo.
 
 - [x] Milestone 1: Repo skeleton, Git, CI (GitHub Actions: lint, unit tests, manifest validation)
 - [x] Milestone 2: Docker Compose stack: Postgres + MinIO + MLflow
@@ -191,7 +191,7 @@ Built incrementally; each milestone has tests and/or a runnable demo.
 - [x] Milestone 7: Prometheus + Grafana wiring
 - [x] Milestone 8: Drift detection (PSI + KS) and `should_retrain` signal
 - [x] Milestone 9: Kubernetes manifests (kustomize, local overlay) and automated drift-triggered retraining with a champion/challenger promotion gate
-  - [x] Retrain orchestrator, decision logic unit-tested with fakes
+  - [x] Retrain orchestrator (decision logic unit-tested with fakes)
   - [x] Kubernetes manifests structurally tested
   - [ ] Validated on a live cluster (manifests are rendered and schema-checked, not yet applied to a cluster)
   - [ ] Spark feature refresh bundled into the CronJob
